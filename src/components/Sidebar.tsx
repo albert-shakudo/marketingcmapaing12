@@ -5,7 +5,8 @@ import {
   ChatBubbleLeftRightIcon,
   GlobeAltIcon,
   DocumentTextIcon,
-  ArrowDownTrayIcon
+  ArrowDownTrayIcon,
+  SignalIcon
 } from '@heroicons/react/24/outline';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -16,6 +17,7 @@ export function Sidebar() {
     { icon: <UserGroupIcon className="sidebar-icon" />, href: "/users" },
     { icon: <CalendarIcon className="sidebar-icon" />, href: "/calendar" },
     { icon: <ChatBubbleLeftRightIcon className="sidebar-icon" />, href: "/chat" },
+    { icon: <SignalIcon className="sidebar-icon" />, href: "/channels" },
     { icon: <GlobeAltIcon className="sidebar-icon" />, href: "/globe" },
     { icon: <DocumentTextIcon className="sidebar-icon" />, href: "/documents" },
     { icon: <ArrowDownTrayIcon className="sidebar-icon" />, href: "/downloads" },
