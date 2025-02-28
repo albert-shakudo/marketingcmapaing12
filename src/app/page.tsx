@@ -1,8 +1,18 @@
+"use client";
+
+import { useEffect } from 'react';
 import { MetricsGrid } from '@/components/MetricsGrid';
 import { PerformanceCharts } from '@/components/PerformanceCharts';
 import { CampaignsTable } from '@/components/CampaignsTable';
+import { usePageTitle } from '@/lib/context/PageTitleContext';
 
 export default function Home() {
+  const { setPageTitle } = usePageTitle();
+  
+  useEffect(() => {
+    setPageTitle('Dashboard');
+  }, [setPageTitle]);
+
   return (
     <div className="bg-white dark:bg-gray-900 p-4 h-full">
       <div className="flex flex-col gap-4 h-full">

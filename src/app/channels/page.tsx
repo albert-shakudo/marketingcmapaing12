@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { CheckCircleIcon, XCircleIcon, InformationCircleIcon, ArrowPathIcon, Cog6ToothIcon } from '@heroicons/react/24/outline';
+import { usePageTitle } from '@/lib/context/PageTitleContext';
 
 const getChannelIconPath = (channel: string): string => {
   switch (channel) {
@@ -28,6 +29,12 @@ interface ChannelConfig {
 }
 
 export default function ChannelConfigPage() {
+  const { setPageTitle } = usePageTitle();
+  
+  useEffect(() => {
+    setPageTitle('Channel Configuration');
+  }, [setPageTitle]);
+
   const [channels, setChannels] = useState<ChannelConfig[]>([
     {
       name: 'meta',
