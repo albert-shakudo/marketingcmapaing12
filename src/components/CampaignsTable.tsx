@@ -6,6 +6,9 @@ import dynamic from 'next/dynamic';
 import type { ChartData, ChartOptions } from 'chart.js';
 import React from 'react';
 import Image from 'next/image';
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, BarElement, ChartType } from 'chart.js';
+import { Chart } from 'react-chartjs-2';
+import annotationPlugin from 'chartjs-plugin-annotation';
 
 // Dynamically import chart components with no SSR
 const Line = dynamic(
@@ -16,15 +19,16 @@ const Line = dynamic(
 // Register chart components on client side only
 const registerChartComponents = async () => {
   if (typeof window !== 'undefined') {
-    const { Chart: ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } = await import('chart.js');
     ChartJS.register(
       CategoryScale,
       LinearScale,
       PointElement,
       LineElement,
+      BarElement,
       Title,
       Tooltip,
-      Legend
+      Legend,
+      annotationPlugin
     );
   }
 };
@@ -65,6 +69,25 @@ interface OptimizerParams {
   minDailyBudget: number;
   optimizationGoal: 'conversions' | 'spend' | 'balanced';
   riskTolerance: 'low' | 'medium' | 'high';
+}
+
+interface ChartDataWithProjections {
+  labels: string[];
+  datasets: Array<{
+    type: 'line' | 'bar';
+    label: string;
+    data: (number | null)[];
+    borderColor?: string;
+    backgroundColor?: string;
+    borderWidth?: number;
+    borderDash?: number[];
+    tension?: number;
+    yAxisID: string;
+    order?: number;
+  }>;
+  projectedSavings: number;
+  averageWithoutAiMeetings: number;
+  averageWithAiMeetings: number;
 }
 
 const sampleData: Campaign[] = [
@@ -202,7 +225,7 @@ const sampleData: Campaign[] = [
   }
 ];
 
-function AIBudgetOptimizer({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+const AIBudgetOptimizer = ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => {
   const [step, setStep] = useState<'params' | 'results'>('params');
   const [params, setParams] = useState<OptimizerParams>({
     selectedCampaigns: [],
@@ -213,93 +236,220 @@ function AIBudgetOptimizer({ isOpen, onClose }: { isOpen: boolean; onClose: () =
     riskTolerance: 'medium',
   });
 
-  const generateChartData = (): ChartData<'line'> => {
-    const dates = [];
-    const currentSpend = [];
-    const predictedSpend = [];
-    const currentConversions = [];
-    const predictedConversions = [];
+  const generateChartData = (): ChartDataWithProjections => {
+    const dates: string[] = [];
+    const historicalSpend: (number | null)[] = [];
+    const historicalMeetings: (number | null)[] = [];
+    const withoutAiSpend: (number | null)[] = [];
+    const withoutAiMeetings: (number | null)[] = [];
+    const withAiSpend: (number | null)[] = [];
+    const withAiMeetings: (number | null)[] = [];
     
-    // Generate past 3 months data
-    for (let i = 90; i >= 0; i--) {
+    // Generate past 8 weeks of data (weekly intervals)
+    for (let i = 8; i >= 0; i--) {
       const date = new Date();
-      date.setDate(date.getDate() - i);
-      dates.push(date.toLocaleDateString());
-      currentSpend.push(Math.random() * 40000 + 10000);
-      currentConversions.push(Math.random() * 100 + 50);
+      date.setDate(date.getDate() - (i * 7));
+      dates.push(new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date));
+      
+      // Historical data with some realistic variation
+      const baseSpend = 25000 + (Math.sin(i / 2) * 5000);
+      const baseMeetings = 75 + (Math.sin(i / 2) * 15);
+      
+      historicalSpend.push(baseSpend);
+      historicalMeetings.push(Math.round(baseMeetings));
+      withoutAiSpend.push(null);
+      withoutAiMeetings.push(null);
+      withAiSpend.push(null);
+      withAiMeetings.push(null);
     }
 
-    // Generate future 3 months predictions
-    for (let i = 1; i <= 90; i++) {
+    // Generate future 4 weeks predictions
+    const lastHistoricalSpend = historicalSpend[historicalSpend.length - 1] ?? 0;
+    const lastHistoricalMeetings = historicalMeetings[historicalMeetings.length - 1] ?? 0;
+
+    for (let i = 1; i <= 4; i++) {
       const date = new Date();
-      date.setDate(date.getDate() + i);
-      dates.push(date.toLocaleDateString());
-      predictedSpend.push(Math.random() * 35000 + 8000);
-      predictedConversions.push(Math.random() * 120 + 60);
+      date.setDate(date.getDate() + (i * 7));
+      dates.push(new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date));
+      
+      // Without AI: spending increases but meetings stay relatively flat
+      const withoutAiDailySpend = lastHistoricalSpend * (1 + (i * 0.05)); // 5% increase per week
+      const withoutAiDailyMeetings = lastHistoricalMeetings * (1 + (i * 0.01)); // 1% increase per week
+      
+      // With AI: spending decreases but meetings increase slightly
+      const withAiDailySpend = lastHistoricalSpend * (1 - (i * 0.03)); // 3% decrease per week
+      const withAiDailyMeetings = lastHistoricalMeetings * (1 + (i * 0.02)); // 2% increase per week
+      
+      historicalSpend.push(null);
+      historicalMeetings.push(null);
+      withoutAiSpend.push(withoutAiDailySpend);
+      withoutAiMeetings.push(Math.round(withoutAiDailyMeetings));
+      withAiSpend.push(withAiDailySpend);
+      withAiMeetings.push(Math.round(withAiDailyMeetings));
     }
+
+    // Calculate projected savings with explicit number conversion
+    const totalWithoutAiSpend = Number(withoutAiSpend.reduce((sum, val) => (sum ?? 0) + (val ?? 0), 0));
+    const totalWithAiSpend = Number(withAiSpend.reduce((sum, val) => (sum ?? 0) + (val ?? 0), 0));
+    const projectedSavings = totalWithoutAiSpend - totalWithAiSpend;
+    const averageWithoutAiMeetings = Number(withoutAiMeetings.reduce((sum, val) => (sum ?? 0) + (val ?? 0), 0)) / 4;
+    const averageWithAiMeetings = Number(withAiMeetings.reduce((sum, val) => (sum ?? 0) + (val ?? 0), 0)) / 4;
 
     return {
       labels: dates,
       datasets: [
         {
-          label: 'Current/Historical Spend',
-          data: [...currentSpend, ...new Array(90).fill(null)],
-          borderColor: 'rgb(0, 0, 0)',
-          tension: 0.1,
+          type: 'line',
+          label: 'Historical Spend',
+          data: historicalSpend,
+          borderColor: 'rgb(75, 85, 99)',
+          borderWidth: 2,
+          tension: 0.3,
+          yAxisID: 'y',
         },
         {
-          label: 'Predicted Spend',
-          data: [...new Array(90).fill(null), ...predictedSpend],
-          borderColor: 'rgb(0, 0, 0)',
+          type: 'line',
+          label: 'Without AI Spend',
+          data: withoutAiSpend,
+          borderColor: 'rgb(239, 68, 68)',
+          borderWidth: 2,
           borderDash: [5, 5],
-          tension: 0.1,
+          tension: 0.3,
+          yAxisID: 'y',
         },
         {
-          label: 'Current/Historical Conversions',
-          data: [...currentConversions, ...new Array(90).fill(null)],
-          borderColor: 'rgb(100, 100, 100)',
-          tension: 0.1,
+          type: 'line',
+          label: 'With AI Spend',
+          data: withAiSpend,
+          borderColor: 'rgb(34, 197, 94)',
+          borderWidth: 2,
+          tension: 0.3,
+          yAxisID: 'y',
         },
         {
-          label: 'Predicted Conversions',
-          data: [...new Array(90).fill(null), ...predictedConversions],
-          borderColor: 'rgb(100, 100, 100)',
-          borderDash: [5, 5],
-          tension: 0.1,
+          type: 'bar',
+          label: 'Historical Meetings',
+          data: historicalMeetings,
+          backgroundColor: 'rgba(75, 85, 99, 0.5)',
+          yAxisID: 'y1',
+          order: 4
         },
+        {
+          type: 'bar',
+          label: 'Without AI Meetings',
+          data: withoutAiMeetings,
+          backgroundColor: 'rgba(239, 68, 68, 0.2)',
+          yAxisID: 'y1',
+          order: 5
+        },
+        {
+          type: 'bar',
+          label: 'With AI Meetings',
+          data: withAiMeetings,
+          backgroundColor: 'rgba(34, 197, 94, 0.5)',
+          yAxisID: 'y1',
+          order: 6
+        }
       ],
+      projectedSavings,
+      averageWithoutAiMeetings,
+      averageWithAiMeetings,
     };
   };
 
   const chartOptions: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: {
+      mode: 'index',
+      intersect: false,
+    },
     scales: {
-      y: {
-        beginAtZero: true,
-      },
       x: {
+        grid: {
+          display: false,
+        },
         ticks: {
-          maxTicksLimit: 8,
-          maxRotation: 0
+          maxTicksLimit: 13, // Show all data points (8 historical + 4 future)
+          maxRotation: 0,
+          font: {
+            size: 11
+          }
+        },
+      },
+      y: {
+        type: 'linear',
+        display: true,
+        position: 'left',
+        title: {
+          display: true,
+          text: 'Weekly Ad Spend ($)',
+        },
+        grid: {
+          drawOnChartArea: false,
+        },
+        ticks: {
+          callback: (value) => '$' + (Number(value) / 1000).toFixed(0) + 'k'
         }
-      }
+      },
+      y1: {
+        type: 'linear',
+        display: true,
+        position: 'right',
+        title: {
+          display: true,
+          text: 'Weekly Meetings (#)',
+        },
+        grid: {
+          drawOnChartArea: false,
+        },
+      },
     },
     plugins: {
       legend: {
         position: 'top',
+        align: 'start',
         labels: {
           boxWidth: 12,
-          padding: 8
+          padding: 15,
+          usePointStyle: true,
         }
       },
-      title: {
-        display: true,
-        text: 'AI Budget Optimization Forecast',
-        font: {
-          size: 14
+      tooltip: {
+        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        padding: 12,
+        titleColor: 'white',
+        bodyColor: 'white',
+        bodySpacing: 8,
+        mode: 'index',
+        intersect: false,
+        callbacks: {
+          label: (context) => {
+            const value = context.raw as number;
+            if (context.dataset.yAxisID === 'y') {
+              return `${context.dataset.label}: $${(value / 1000).toFixed(1)}k`;
+            }
+            return `${context.dataset.label}: ${Math.round(value)}`;
+          }
         }
       },
+      annotation: {
+        annotations: {
+          todayLine: {
+            type: 'line',
+            xMin: 8,
+            xMax: 8,
+            borderColor: 'rgba(0, 0, 0, 0.5)',
+            borderWidth: 2,
+            borderDash: [2, 2],
+            label: {
+              display: true,
+              content: 'Today',
+              position: 'start'
+            }
+          }
+        }
+      }
     },
   };
 
@@ -507,11 +657,19 @@ function AIBudgetOptimizer({ isOpen, onClose }: { isOpen: boolean; onClose: () =
           ) : (
             <div className="grid grid-cols-12 gap-4">
               <div className="col-span-8">
-                <div className="h-[300px]">
-                  <Line
-                    data={generateChartData()}
+                <div className="h-[300px] relative">
+                  <Chart
+                    // @ts-expect-error - Chart.js typing issue with mixed chart types
+                    type="mixed"
+                    data={generateChartData() as unknown as ChartData<'line', number[], string>}
                     options={chartOptions}
                   />
+                  {/* Add floating tooltip with projected savings */}
+                  <div className="absolute top-2 right-2 bg-white/90 dark:bg-gray-800/90 p-2 rounded-md shadow-sm border border-gray-200 text-xs">
+                    <div className="font-medium">Projected 30-day Impact:</div>
+                    <div className="text-green-600">Save ${(generateChartData().projectedSavings / 1000).toFixed(1)}k</div>
+                    <div className="text-blue-600">Maintain {Math.round(generateChartData().averageWithAiMeetings)} meetings/day</div>
+                  </div>
                 </div>
               </div>
               
@@ -634,7 +792,7 @@ function AIBudgetOptimizer({ isOpen, onClose }: { isOpen: boolean; onClose: () =
       </div>
     </div>
   );
-}
+};
 
 export function CampaignsTable() {
   const [isOptimizerOpen, setIsOptimizerOpen] = useState(false);
